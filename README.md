@@ -1,1 +1,151 @@
 # terminal-pet
+
+A pixel kiwi that codes, drinks coffee, handles computer disasters, and sleeps
+under a breathing duvet—all in your terminal.
+
+Run it by itself or above a working shell. The laptop displays, GPU activity,
+downloads, and errors are decorative animations, not live system monitoring.
+The pet runs locally and makes no API calls.
+
+## Quick start
+
+```sh
+git clone https://github.com/kenzeng24/terminal-pet.git
+cd terminal-pet
+python3 kiwi_pet.py --pet
+```
+
+This starts the default `emergency` mode, which cycles through everyday activities
+and occasional mishaps. Press **Ctrl+C** to exit pet-only mode.
+
+### Requirements
+
+- Python 3; checked locally with Python **3.10.11**. No pip packages are required.
+- An interactive terminal supporting ANSI colors, cursor positioning, and the
+  alternate screen. Output redirection and notebook output cells are not supported.
+- For the default mode, at least **84 columns × 18 rows** in pet-only mode, or
+  **84 columns × 26 rows** with the split shell. A larger window is more comfortable.
+- **GNU Screen** (`screen` on your `PATH`) is required only for split-shell mode.
+
+The project was developed on macOS. Linux and Windows/WSL compatibility have not
+yet been verified; native Windows split-shell support is not provided.
+
+## Keep working below the kiwi
+
+Check that GNU Screen is available, then start the split-shell version:
+
+```sh
+command -v screen
+python3 kiwi_pet.py
+```
+
+The animation occupies the top pane and an interactive shell runs below it.
+Type `exit` in that shell to close both panes. If `screen` is unavailable, use
+`--pet` or install GNU Screen through your system's package manager.
+
+## Animation modes
+
+Select a mode with `--design`:
+
+```sh
+python3 kiwi_pet.py --pet --design coffee
+```
+
+Omit `--pet` to use the same design above a working shell.
+
+| Design | What happens |
+| --- | --- |
+| `emergency` **(default)** | Two different daytime events, then sleep; includes recovery sequences, coffee breaks, and randomized nighttime screens. |
+| `round` | The standing kiwi bobs at its laptop, with planted feet and spinning GPU fans. |
+| `bedtime` | Repeats standing and sleeping, with pauses before breathing and after the last sleep bubble. |
+| `sleep` | Sideways sleeping kiwi: the head stays still while the duvet breathes and bubbles rise. |
+| `sleep_side` | The same sideways sleeping design as `sleep`. |
+| `sleep_large` | A larger alternative sleeping kiwi with a breathing blanket. |
+| `coffee` | The kiwi holds a green mug, contracts downward while sipping, and emits curling steam. |
+| `reading` | The reading sprite turns pages of a green book beside the laptop. |
+| `classic` | The original walking kiwi. |
+
+```sh
+python3 kiwi_pet.py --help
+```
+
+Most desk scenes need 78 terminal columns; `emergency` needs 84. Required height
+varies by design. The program reports the required size if the window is too small.
+
+## Daily events
+
+In `emergency` mode, each simulated day has **two different events before one
+night**. A simulated day lasts roughly 39–70 seconds at the default animation
+speed, depending on the selected events and recovery sequences.
+
+Currently enabled events are:
+
+- Normal btop-style laptop activity.
+- A blue screen with frozen fans and a startled kiwi.
+- Overheating with smoke, a red display, and shutdown/restart recovery.
+- Coffee while a download bar fills.
+- A coffee break.
+- Debugging that first fails, then succeeds.
+- Rewriting a short red code block.
+
+Code scrolling (`terminal`) and the one-pixel semicolon fix (`semicolon`) are
+implemented but currently commented out in `DAY_LENGTHS`. Reading is available
+as a standalone mode, but is not part of the random daily events.
+
+The current opening days are normal activity → coffee, then normal activity →
+red-block fix. Later pairs are random, with no repeated event inside a pair or
+across the boundary between consecutive days.
+
+Night one uses the default display and night two previews the screensaver. Later
+nights choose equally between the screensaver, a download bar, and default laptop
+activity. Each choice lasts the whole night.
+
+## Customize the pet
+
+Edit [kiwi_pet.py](kiwi_pet.py), then restart the animation:
+
+- **Daily event pool:** comment or uncomment supported entries in `DAY_LENGTHS`.
+  Keep at least two enabled. Preset days automatically replace disabled entries.
+  Adding an unfamiliar name alone does not implement a new event; it also needs
+  rendering logic.
+- **Opening days:** change the preferred pairs in `DaySchedule.__init__`.
+- **Nighttime options:** edit `NIGTHT_DISPLAYS` (the variable's current spelling).
+  The first two nights are separately configured in `DaySchedule.__init__`.
+- **Colors:** edit `COLORS`, `ROUND_COLORS`, and `SCREEN_COLORS`.
+- **Pixel designs:** edit the sprite rows near the top of the file. Each character
+  represents one pixel, rendered as two terminal columns.
+- **Timing:** the animation advances every 0.22 seconds. Event durations are in
+  ticks; changing them also requires checking the event's internal phase timings.
+
+The scrolling-code event reads this script's functions and classes once per run,
+using their indentation, line lengths, and blank lines to build its pixel display.
+
+### Refresh after editing
+
+- **Pet only:** press Ctrl+C, then rerun the command.
+- **Split shell:** type `exit`, then rerun the command from your original shell.
+
+There is no automatic reload. Use the up-arrow key and Enter to repeat your last
+command.
+
+## Troubleshooting
+
+- **“Run this pet in an interactive terminal.”** Run it directly in a terminal,
+  without piping or redirecting its output.
+- **Resize message:** enlarge the window or reduce your terminal font size.
+- **Colors differ between modes:** pet-only mode uses a 256-color palette;
+  split-shell mode uses a simpler ANSI palette to accommodate older Screen builds.
+  Your terminal theme can also change the appearance of those colors.
+- **Missing `screen`:** use `--pet`, or install GNU Screen for split-shell mode.
+- **Cursor remains hidden after a forced termination:** run `reset` in your shell.
+
+## Contributing
+
+Bug reports and pull requests are welcome. For display issues, include your OS,
+terminal application, Python version, chosen design, terminal dimensions, and a
+screenshot if possible. Check both pet-only and split-shell behavior when changing
+rendering or terminal handling.
+
+## License
+
+[Apache License 2.0](LICENSE).
