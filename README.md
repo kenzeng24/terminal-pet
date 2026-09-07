@@ -15,7 +15,7 @@ cd terminal-pet
 python3 kiwi_pet.py --pet
 ```
 
-This starts the default `emergency` mode, which cycles through everyday activities
+This starts the default `daily` mode, which cycles through everyday activities
 and occasional mishaps. Press **Ctrl+C** to exit pet-only mode.
 
 ### Requirements
@@ -55,7 +55,7 @@ Omit `--pet` to use the same design above a working shell.
 
 | Design | What happens |
 | --- | --- |
-| `emergency` **(default)** | Two different daytime events, then sleep; includes recovery sequences, coffee breaks, and randomized nighttime screens. |
+| `daily` **(default)** | Two different daytime events, then sleep; includes recovery sequences, coffee breaks, and randomized nighttime screens. |
 | `round` | The standing kiwi bobs at its laptop, with planted feet and spinning GPU fans. |
 | `bedtime` | Repeats standing and sleeping, with pauses before breathing and after the last sleep bubble. |
 | `sleep` | Sideways sleeping kiwi: the head stays still while the duvet breathes and bubbles rise. |
@@ -69,12 +69,12 @@ Omit `--pet` to use the same design above a working shell.
 python3 kiwi_pet.py --help
 ```
 
-Most desk scenes need 78 terminal columns; `emergency` needs 84. Required height
+Most desk scenes need 78 terminal columns; `daily` needs 84. Required height
 varies by design. The program reports the required size if the window is too small.
 
 ## Daily events
 
-In `emergency` mode, each simulated day has **two different events before one
+In `daily` mode, each simulated day has **two different events before one
 night**. A simulated day lasts roughly 39–70 seconds at the default animation
 speed, depending on the selected events and recovery sequences.
 

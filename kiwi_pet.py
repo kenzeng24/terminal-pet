@@ -142,11 +142,11 @@ DESIGNS = {
     "sleep_large": (ROUND_BODY, ROUND_FEET),
     "sleep_side": (ROUND_BODY, ROUND_FEET),
     "bedtime": (ROUND_BODY, ROUND_FEET),
-    "emergency": (ROUND_BODY, ROUND_FEET),
+    "daily": (ROUND_BODY, ROUND_FEET),
     "reading": (ROUND_BODY, ROUND_FEET),
     "coffee": (ROUND_BODY, ROUND_FEET)
 }
-DESK_DESIGNS = ("round", "sleep", "sleep_large", "sleep_side", "bedtime", "emergency", "reading", "coffee")
+DESK_DESIGNS = ("round", "sleep", "sleep_large", "sleep_side", "bedtime", "daily", "reading", "coffee")
 BEDTIME_AWAKE_TICKS = 56
 BEDTIME_CYCLE_TICKS = 122
 DAY_LENGTHS = {
@@ -649,10 +649,10 @@ def animate(design="classic"):
         sys.exit("Run this pet in an interactive terminal.")
     body, feet = DESIGNS[design]
     sprite_width = ROUND_SCENE_WIDTH if design in DESK_DESIGNS else max(len(row) for row in body)
-    if design == "emergency":
+    if design == "daily":
         sprite_width = EMERGENCY_SCENE_WIDTH
     min_width = max(32, sprite_width * 2)
-    min_height = {"emergency": 18, "sleep": 18, "sleep_side": 18, "bedtime": 18, "coffee": 16, "sleep_large": 16}.get(design, 14 if design in DESK_DESIGNS else 12)
+    min_height = {"daily": 18, "sleep": 18, "sleep_side": 18, "bedtime": 18, "coffee": 16, "sleep_large": 16}.get(design, 14 if design in DESK_DESIGNS else 12)
     x, direction, tick = 0, 1, 0
     try:
         # Alternate screen preserves your shell; hide the cursor while playing.
@@ -665,7 +665,7 @@ def animate(design="classic"):
                 limit = (width - sprite_width * 2) // 2
                 if design in DESK_DESIGNS:
                     x = limit // 2
-                    rows = (emergency_scene(tick) if design == "emergency" else
+                    rows = (emergency_scene(tick) if design == "daily" else
                             side_sleep_scene(tick) if design in ("sleep", "sleep_side") else
                             large_sleep_scene(tick) if design == "sleep_large" else
                             coffee_scene(tick) if design == "coffee" else
@@ -684,15 +684,6 @@ def animate(design="classic"):
                     if direction < 0:
                         row = row[::-1]
                     frame += f"\033[{y};{x * 2 + 1}H" + pixels(row, blink, design)
-                activity = {"round": "kiwi laptop bob", "sleep": "kiwi sleeping",
-                            "sleep_large": "kiwi sleeping / full size",
-                            "sleep_side": "kiwi sleeping / breathing duvet",
-                            "bedtime": "kiwi bedtime",
-                            "emergency": "kiwi emergency",
-                            "reading": "kiwi reading",
-                            "coffee": "kiwi coffee break",
-                            "classic": "kiwi stroll"}[design]
-                frame += f"\033[{min_height};1H{activity} / {design}"
             sys.stdout.write(frame)
             sys.stdout.flush()
             tick += 1
@@ -706,8 +697,8 @@ def animate(design="classic"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--design", choices=DESIGNS, default="emergency",
-                        help="kiwi style (default: emergency)")
+    parser.add_argument("--design", choices=DESIGNS, default="daily",
+                        help="kiwi style (default: daily)")
     parser.add_argument("--pet", action="store_true",
                         help="show only the pet; Ctrl-C to quit")
     parser.add_argument("--shell", action="store_true", help=argparse.SUPPRESS)
@@ -728,9 +719,9 @@ def main():
         sys.exit("This mode requires GNU screen. Use --pet for the pet alone.")
     width, height = shutil.get_terminal_size()
     min_width = ROUND_SCENE_WIDTH * 2 if args.design in DESK_DESIGNS else 32
-    if args.design == "emergency":
+    if args.design == "daily":
         min_width = EMERGENCY_SCENE_WIDTH * 2
-    pane_height = {"emergency": 18, "sleep": 18, "sleep_side": 18, "bedtime": 18, "coffee": 16, "sleep_large": 16}.get(args.design, 14 if args.design in DESK_DESIGNS else 12)
+    pane_height = {"daily": 18, "sleep": 18, "sleep_side": 18, "bedtime": 18, "coffee": 16, "sleep_large": 16}.get(args.design, 14 if args.design in DESK_DESIGNS else 12)
     if width < min_width or height < pane_height + 8:
         sys.exit(f"Please resize your terminal to at least {min_width} columns by {pane_height + 8} rows.")
 
