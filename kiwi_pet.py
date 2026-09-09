@@ -245,11 +245,15 @@ SCREEN_COLORS = {"b": 43, "B": 43, "k": 103, "e": 40, "s": 47, "d": 44,
 ROUND_COLORS = {**COLORS, "k": 226, "s": 252, "d": 21}
 
 
+def kiwi_bob(tick, emergency=False):
+    motion_tick = tick * 4 if emergency else tick
+    return (0, 0, 0, 1, 1, 1, 1, 0)[motion_tick % 8]
+
+
 def round_scene(tick, sleeping=False, *, sleep_tick=None, bubble_tick=None,
                 bubble_stop=None, emergency=False):
     """Animate the kiwi or its duvet beside the running computer."""
-    bob_tick = tick * 4 if emergency else tick
-    bob = (0, 0, 0, 1, 1, 1, 1, 0)[bob_tick % 8]
+    bob = kiwi_bob(tick, emergency)
     rows = [list(" " * 28) for _ in range(10)]
     if sleeping:
         sleep_clock = tick if sleep_tick is None else sleep_tick
@@ -489,7 +493,9 @@ def _daily_scene(tick, schedule):
             overhead[y][x:x + width] = "j" * width
     frame = ["   " + "".join(row) for row in overhead] + ["   " + row for row in scene]
     if alarm:
-        for y in (2, 3, 5):
+        bob = kiwi_bob(tick, emergency=True)
+        for offset in (2, 3, 5):
+            y = offset + bob
             frame[y] = frame[y][:19] + "!" + frame[y][20:]
     return frame
 
@@ -912,7 +918,7 @@ def main():
                         help="control a running kiwi: coffee, sleep, wake, random")
     parser.add_argument("--design", choices=DESIGNS, default="daily",
                         help="kiwi style (default: daily)")
-    parser.add_argument("--pixel-size", type=int, choices=(1, 2), default=1,
+    parser.add_argument("--pixel-size", type=int, choices=(1, 2), default=2,
                         help="pixel scale: 1 compact (default), 2 original")
     parser.add_argument("--renderer", choices=("auto", "apple-font", "half-block"),
                         default="auto", help="compact renderer (auto halves the tab font in Apple Terminal)")
