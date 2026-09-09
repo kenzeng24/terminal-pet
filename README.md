@@ -3,6 +3,8 @@
 A pixel kiwi that codes, drinks coffee, handles computer disasters, and sleeps
 under a breathing duvet—all in your terminal.
 
+![Kiwi working, drinking coffee, and settling down to sleep](assets/kiwi-demo.gif)
+
 Run it by itself or above a working shell. The laptop displays, GPU activity,
 downloads, and errors are decorative animations, not live system monitoring.
 The pet runs locally and makes no API calls.
@@ -22,9 +24,11 @@ and occasional mishaps. Press **Ctrl+C** to exit pet-only mode.
 
 - Python 3; checked locally with Python **3.10.11**. No pip packages are required.
 - An interactive terminal supporting ANSI colors, cursor positioning, and the
-  alternate screen. Output redirection and notebook output cells are not supported.
-- For the default mode, at least **84 columns × 18 rows** in pet-only mode, or
-  **84 columns × 26 rows** with the split shell. A larger window is more comfortable.
+  alternate screen. The half-block renderer additionally needs Unicode block
+  characters. Output redirection and notebook output cells are not supported.
+- For the default mode, at least **42 columns × 9 rows** in pet-only mode, or
+  **42 columns × 17 rows** with the split shell (half-block compact mode).
+  Apple Terminal uses **84 × 18** or **84 × 26** smaller cells by halving the font. A larger window is more comfortable.
 - **GNU Screen** (`screen` on your `PATH`) is required only for split-shell mode.
 
 The project was developed on macOS. Linux and Windows/WSL compatibility have not
@@ -42,6 +46,37 @@ python3 kiwi_pet.py
 The animation occupies the top pane and an interactive shell runs below it.
 Type `exit` in that shell to close both panes. If `screen` is unavailable, use
 `--pet` or install GNU Screen through your system's package manager.
+
+## Pixel size
+
+Both sizes display the **same source artwork**, with every pixel preserved.
+Size `1` makes each pixel approximately half as wide and half as tall as size `2`.
+
+- **Apple Terminal:** size `1` temporarily halves the current tab's font size and
+  draws the exact same background-colored spaces as size `2`. The original font
+  size is restored when you exit. This affects the whole tab, including the shell
+  in split-shell mode. Apple Terminal rounds font sizes to whole points (for example, 11 → 6 pt);
+  an even starting size allows an exact half in points. Font metrics and screen
+  pixels can still round the physical dimensions. macOS may ask for permission to control Terminal.
+- **Other terminals:** size `1` packs two source rows into half-block characters,
+  retaining all pixels without changing the font size.
+
+No sprite reduction or resampling is used. To explicitly select the Apple
+Terminal method, use `--renderer apple-font`; `--renderer half-block` selects the
+Unicode method. If Terminal automation is unavailable, use size `2` and manually
+reduce the tab's font size. Split-shell mode enables UTF-8 in GNU Screen.
+Choose the size when launching either pet-only or split-shell mode:
+
+```sh
+python3 kiwi_pet.py --pet --pixel-size 1  # compact (default)
+python3 kiwi_pet.py --pet --pixel-size 2  # original size
+python3 kiwi_pet.py --pixel-size 1        # compact pet above your shell
+```
+
+Size `2` uses two columns and one row per pixel. The default daily scene then
+needs **84 × 18** terminal cells, or **84 × 26** with the split shell.
+Restart with the other option to switch sizes. Terminal font size also affects
+the physical size on screen.
 
 ## Animation modes
 
@@ -69,7 +104,10 @@ Omit `--pet` to use the same design above a working shell.
 python3 kiwi_pet.py --help
 ```
 
-Most desk scenes need 78 terminal columns; `daily` needs 84. Required height
+Most desk scenes need 39 terminal columns in half-block compact mode; `daily`
+needs 42. Apple Terminal font scaling uses 78 and 84 columns respectively, with
+smaller physical cells.
+Original size uses 78 columns for most desk scenes and 84 for `daily`. Required height
 varies by design. The program reports the required size if the window is too small.
 
 ## Daily events
@@ -92,28 +130,54 @@ Code scrolling (`terminal`) and the one-pixel semicolon fix (`semicolon`) are
 implemented but currently commented out in `DAY_LENGTHS`. Reading is available
 as a standalone mode, but is not part of the random daily events.
 
-The current opening days are normal activity → coffee, then normal activity →
-red-block fix. Later pairs are random, with no repeated event inside a pair or
-across the boundary between consecutive days.
+The first day's activities and nighttime display are random too. There are no
+preset opening days. Events do not repeat within a day or across day boundaries.
 
-Night one uses the default display and night two previews the screensaver. Later
-nights choose equally between the screensaver, a download bar, and default laptop
-activity. Each choice lasts the whole night.
+## Interact with the kiwi
+
+Start the split-shell version, then type commands in the shell below it:
+
+```sh
+python3 kiwi_pet.py
+# In the shell below the kiwi:
+kiwi coffee  # drink coffee until another command
+kiwi sleep   # sleep until another command
+kiwi wake    # wake up and work at the laptop
+kiwi random  # return to a fresh random daily routine
+```
+
+Commands take effect on the next animation tick (about 0.22 seconds). They control
+only the kiwi above that shell. Starting the pet without an action defaults to
+the random daily routine; `--design` still lets you choose an initial activity.
+
+For pet-only mode, send commands from another terminal. From the project folder:
+
+```sh
+./kiwi coffee
+# Or make the command available in that shell, even after changing directory:
+export PATH="$PWD:$PATH"
+kiwi sleep
+kiwi wake
+kiwi random
+```
+
+A command from a separate terminal automatically finds a single running kiwi. If
+several are running, use the shell beneath the intended kiwi. Commands report an
+error if there is no running pet. Control uses local temporary files, with no
+network or API calls, and the session files are removed when the pet exits.
 
 ## Customize the pet
 
 Edit [kiwi_pet.py](kiwi_pet.py), then restart the animation:
 
 - **Daily event pool:** comment or uncomment supported entries in `DAY_LENGTHS`.
-  Keep at least two enabled. Preset days automatically replace disabled entries.
+  Keep at least two enabled.
   Adding an unfamiliar name alone does not implement a new event; it also needs
   rendering logic.
-- **Opening days:** change the preferred pairs in `DaySchedule.__init__`.
 - **Nighttime options:** edit `NIGTHT_DISPLAYS` (the variable's current spelling).
-  The first two nights are separately configured in `DaySchedule.__init__`.
 - **Colors:** edit `COLORS`, `ROUND_COLORS`, and `SCREEN_COLORS`.
 - **Pixel designs:** edit the sprite rows near the top of the file. Each character
-  represents one pixel, rendered as two terminal columns.
+  represents one pixel, rendered according to `--pixel-size`.
 - **Timing:** the animation advances every 0.22 seconds. Event durations are in
   ticks; changing them also requires checking the event's internal phase timings.
 
@@ -138,6 +202,25 @@ command.
   Your terminal theme can also change the appearance of those colors.
 - **Missing `screen`:** use `--pet`, or install GNU Screen for split-shell mode.
 - **Cursor remains hidden after a forced termination:** run `reset` in your shell.
+
+## Regenerate the demo GIF
+
+The GIF renders a seeded example daily cycle at its normal animation speed.
+Pillow is only needed to export it; the pet itself still has no dependencies.
+
+```sh
+python3 -m venv /tmp/kiwi-gif
+/tmp/kiwi-gif/bin/pip install Pillow
+/tmp/kiwi-gif/bin/python scripts/make_demo.py
+```
+
+## Rendering checks
+
+Run `python3 -m unittest discover -s tests` to verify both sizes across all
+animation modes, daily events, recovery phases, and nighttime displays with both
+palettes. Tests cover source-pixel preservation, Apple Terminal font scaling and
+restoration, detection, and failure handling. Interaction tests cover commands, session targeting,
+cleanup, and random scheduling.
 
 ## Contributing
 

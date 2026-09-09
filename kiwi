@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""Launch or control the terminal kiwi."""
+from kiwi_pet import main
+
+if __name__ == '__main__':
+    main()

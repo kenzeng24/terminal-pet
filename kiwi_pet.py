@@ -3,11 +3,13 @@
 
 import argparse
 import ast
+from contextlib import contextmanager
 from functools import lru_cache
 import os
 from pathlib import Path
 import random
 import shutil
+import uuid
 import subprocess
 import sys
 import tempfile
@@ -118,10 +120,10 @@ PAGE_TURNS = [
 ]
 COFFEE_KIWI = [
     "             ",
-    "       aaaa  ",
-    "      aaaaaa ",
-    "     kaaeeaaa",
-    " oooooooaaaaa",
+    "      aaaaa  ",
+    "     aaaaaaa ",
+    "    kkaaaeaaa",
+    " oooooooaeaaa",
     " o oooooaaaaa",
     " oooooooaaaaa",
     "  kooookkaaaa",
@@ -197,18 +199,9 @@ class DaySchedule:
         self.rng = random.Random(seed)
         if len(DAY_LENGTHS) < 2:
             raise ValueError("Keep at least two events enabled in DAY_LENGTHS.")
-        first_pair = self.enabled_pair(("normal", "coffee"))
-        second_pair = self.enabled_pair(("semicolon", "block_fix"))
-        second_start = self.day_length(first_pair)
-        self.days = [(0, first_pair), (second_start, second_pair)]
-        self.night_displays = {0: "default", second_start: "screensaver"}
-
-    def enabled_pair(self, preferred):
-        """Replace disabled preset events without changing the enabled choices."""
-        reserved = set(preferred) & DAY_LENGTHS.keys()
-        replacements = iter(name for name in DAY_LENGTHS if name not in reserved)
-        return tuple(name if name in DAY_LENGTHS else next(replacements)
-                     for name in preferred)
+        first_pair = tuple(self.rng.sample(list(DAY_LENGTHS), 2))
+        self.days = [(0, first_pair)]
+        self.night_displays = {0: self.rng.choice(NIGTHT_DISPLAYS)}
 
     @classmethod
     def day_length(cls, pair):
@@ -632,40 +625,257 @@ def side_sleep_scene(tick, *, sleep_tick=None, bubble_tick=None, bubble_stop=Non
     return ["".join(row) for row in rows]
 
 
-def pixels(row, blink, design="classic"):
-    palette = SCREEN_COLORS if os.environ.get("STY") else (
+def pixel_palette(design):
+    return SCREEN_COLORS if os.environ.get("STY") else (
         ROUND_COLORS if design in DESK_DESIGNS else COLORS
     )
-    prefix = "" if os.environ.get("STY") else "48;5;"
+
+
+def pixel_color(pixel, blink, palette):
+    return None if pixel == " " else palette["b" if blink and pixel == "e" else pixel]
+
+
+def color_code(value, foreground=False):
+    if value is None:
+        return "39" if foreground else "49"
+    if os.environ.get("STY"):
+        return str(value - 10 if foreground else value)
+    return f"{'38' if foreground else '48'};5;{value}"
+
+
+def pixels(row, blink, design="classic"):
+    palette = pixel_palette(design)
     return "".join(
-        "\033[0m  " if c == " " else
-        f"\033[{prefix}{palette['b' if blink and c == 'e' else c]}m  "
-        for c in row
+        f"\033[0;{color_code(pixel_color(c, blink, palette))}m  " for c in row
     ) + "\033[0m"
 
 
-def animate(design="classic"):
+def compact_pixels(top, bottom, blink, design="classic"):
+    """Pack two rows without drawing glyphs inside solid-color regions.
+
+    A block glyph's foreground can have different font rasterization from its
+    background. Using a background-colored space for equal halves avoids seams
+    and alternating shades across solid sprites, desks, and monitor frames.
+    """
+    palette = pixel_palette(design)
+    result = []
+    width = max(len(top), len(bottom))
+    for upper, lower in zip(top.ljust(width), bottom.ljust(width)):
+        upper = pixel_color(upper, blink, palette)
+        lower = pixel_color(lower, blink, palette)
+        if upper == lower:
+            result.append(f"\033[0;{color_code(upper)}m ")
+        elif upper is None:
+            result.append(f"\033[0;{color_code(lower, True)};49m▄")
+        else:
+            result.append(f"\033[0;{color_code(upper, True)};{color_code(lower)}m▀")
+    return "".join(result) + "\033[0m"
+
+
+APPLE_FONT_SCRIPT = """
+on run argv
+    set targetTTY to item 1 of argv
+    tell application "Terminal"
+        repeat with terminalWindow in windows
+            repeat with terminalTab in tabs of terminalWindow
+                if tty of terminalTab is targetTTY then
+                    if (count of argv) > 1 then
+                        set font size of terminalTab to (item 2 of argv as real)
+                    end if
+                    return font size of terminalTab
+                end if
+            end repeat
+        end repeat
+    end tell
+    error "No Apple Terminal tab matches this process's TTY."
+end run
+"""
+
+
+def terminal_font(tty, size=None):
+    args = ["/usr/bin/osascript", "-e", APPLE_FONT_SCRIPT, tty]
+    if size is not None:
+        args.append(str(size))
+    result = subprocess.run(args, capture_output=True, text=True, check=True)
+    return float(result.stdout.strip())
+
+
+@contextmanager
+def apple_pixel_scale():
+    """Keep all sprite pixels; halve this tab's font and restore it on exit."""
+    try:
+        tty = os.ttyname(sys.stdin.fileno())
+        original = terminal_font(tty)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        raise SystemExit("Cannot control this Apple Terminal tab's font. Allow Terminal "
+                         "automation when macOS asks, or use --pixel-size 2 and "
+                         "reduce the tab's font size manually.") from exc
+    try:
+        try:
+            terminal_font(tty, original / 2)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            raise SystemExit("Could not halve this tab's font. Use --pixel-size 2 "
+                             "and reduce the tab's font size manually.") from exc
+        yield
+    finally:
+        try:
+            terminal_font(tty, original)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            print(f"Could not restore this tab's font size; set it back to {original:g} pt.",
+                  file=sys.stderr)
+
+
+def resolve_renderer(renderer="auto"):
+    if renderer == "auto":
+        return "apple-font" if os.environ.get("TERM_PROGRAM") == "Apple_Terminal" else "half-block"
+    return renderer
+
+
+def render_rows(rows, blink, design="classic", pixel_size=1, *, width=None, renderer="auto"):
+    """Render every source pixel without resampling the artwork."""
+    if pixel_size not in (1, 2):
+        raise ValueError("Pixel size must be 1 or 2")
+    width = max([width or 0] + [len(row) for row in rows])
+    rows = [row.ljust(width) for row in rows]
+    if pixel_size == 2:
+        return [pixels(row, blink, design) for row in rows]
+    if len(rows) % 2:
+        rows.append(" " * width)
+    return [compact_pixels(rows[i], rows[i + 1], blink, design)
+            for i in range(0, len(rows), 2)]
+
+
+def scene_dimensions(design, pixel_size, renderer="auto"):
+    """Return terminal width and reserved height for either pixel scale."""
+    width = (EMERGENCY_SCENE_WIDTH if design == "daily" else
+             ROUND_SCENE_WIDTH if design in DESK_DESIGNS else 16)
+    height = {"daily": 18, "sleep": 18, "sleep_side": 18, "bedtime": 18,
+              "coffee": 16, "sleep_large": 16}.get(
+                  design, 14 if design in DESK_DESIGNS else 12)
+    return width * pixel_size, height if pixel_size == 2 else (height + 1) // 2
+
+
+ACTIONS = {"coffee": "coffee", "sleep": "sleep_side", "wake": "round", "random": "daily"}
+
+
+def session_root():
+    root = Path(tempfile.gettempdir()) / f"terminal-kiwi-{os.getuid()}"
+    root.mkdir(mode=0o700, exist_ok=True)
+    if root.is_symlink() or root.stat().st_uid != os.getuid():
+        raise SystemExit("Kiwi session directory is not owned by this user.")
+    return root
+
+
+@contextmanager
+def control_session():
+    """Share one private mailbox between the pet and its working shell."""
+    existing = os.environ.get("KIWI_SESSION")
+    if existing and Path(existing).is_dir():
+        yield Path(existing)
+        return
+    with tempfile.TemporaryDirectory(prefix="pet-", dir=session_root()) as directory:
+        session = Path(directory)
+        (session / "pid").write_text(str(os.getpid()))
+        os.environ["KIWI_SESSION"] = directory
+        try:
+            yield session
+        finally:
+            if existing is None:
+                os.environ.pop("KIWI_SESSION", None)
+            else:
+                os.environ["KIWI_SESSION"] = existing
+
+
+def live_sessions():
+    sessions = []
+    for session in session_root().glob("pet-*"):
+        try:
+            os.kill(int((session / "pid").read_text()), 0)
+        except (OSError, ValueError):
+            continue
+        sessions.append(session)
+    return sessions
+
+
+def send_action(action):
+    selected = os.environ.get("KIWI_SESSION")
+    sessions = live_sessions()
+    if selected:
+        target = Path(selected)
+        if target not in sessions:
+            raise SystemExit("This shell's kiwi is no longer running. Start it again.")
+    elif len(sessions) == 1:
+        target = sessions[0]
+    elif not sessions:
+        raise SystemExit("No kiwi is running. Start python3 kiwi_pet.py first.")
+    else:
+        raise SystemExit("Several kiwis are running. Send this command from the shell beneath the kiwi you want.")
+    pending = target / f"pending-{uuid.uuid4().hex}"
+    try:
+        pending.write_text(action)
+        pending.replace(target / "command")
+    except OSError as exc:
+        raise SystemExit("The kiwi stopped before it received the command.") from exc
+    print(f"Kiwi: {action}")
+
+
+class ActivityControl:
+    def __init__(self, design, session=None):
+        self.design = design
+        self.session = session
+        self.tick = 0
+        self.schedule = DaySchedule()
+
+    def poll(self):
+        if self.session is None:
+            return
+        # Rename first so a new command cannot be lost while this one is read.
+        claimed = self.session / "consumed"
+        try:
+            (self.session / "command").replace(claimed)
+        except FileNotFoundError:
+            return
+        try:
+            action = claimed.read_text().strip()
+        finally:
+            claimed.unlink(missing_ok=True)
+        if action in ACTIONS:
+            self.design = ACTIONS[action]
+            self.tick = 0
+            if action == "random":
+                self.schedule = DaySchedule()
+
+
+def animate(design="classic", pixel_size=1, renderer="auto"):
     if not sys.stdout.isatty():
         sys.exit("Run this pet in an interactive terminal.")
+    session = os.environ.get("KIWI_SESSION")
+    control = ActivityControl(design, Path(session) if session else None)
     body, feet = DESIGNS[design]
     sprite_width = ROUND_SCENE_WIDTH if design in DESK_DESIGNS else max(len(row) for row in body)
-    if design == "daily":
+    if design == "daily" or session:
         sprite_width = EMERGENCY_SCENE_WIDTH
-    min_width = max(32, sprite_width * 2)
-    min_height = {"daily": 18, "sleep": 18, "sleep_side": 18, "bedtime": 18, "coffee": 16, "sleep_large": 16}.get(design, 14 if design in DESK_DESIGNS else 12)
+    renderer = resolve_renderer(renderer)
+    min_width, min_height = scene_dimensions("daily" if session else design, pixel_size, renderer)
+    rendered_width = sprite_width * pixel_size
     x, direction, tick = 0, 1, 0
     try:
         # Alternate screen preserves your shell; hide the cursor while playing.
         sys.stdout.write("\033[?1049h\033[?25l")
         while True:
+            control.poll()
+            design, tick = control.design, control.tick
+            body, feet = DESIGNS[design]
+            if design in DESK_DESIGNS:
+                direction = 1
             width, height = shutil.get_terminal_size()
             if width < min_width or height < min_height:
                 frame = f"\033[H\033[2JPlease resize to {min_width} x {min_height} or larger."
             else:
-                limit = (width - sprite_width * 2) // 2
+                limit = (width - rendered_width) // pixel_size
                 if design in DESK_DESIGNS:
                     x = limit // 2
-                    rows = (emergency_scene(tick) if design == "daily" else
+                    rows = (emergency_scene(tick, control.schedule) if design == "daily" else
                             side_sleep_scene(tick) if design in ("sleep", "sleep_side") else
                             large_sleep_scene(tick) if design == "sleep_large" else
                             coffee_scene(tick) if design == "coffee" else
@@ -679,14 +889,15 @@ def animate(design="classic"):
                     rows = body + list(feet[tick % 2])
                 blink = random.random() < 0.08
                 frame = "\033[H\033[2J"
-                for y, row in enumerate(rows, 2):
-                    row = row.ljust(sprite_width)
-                    if direction < 0:
-                        row = row[::-1]
-                    frame += f"\033[{y};{x * 2 + 1}H" + pixels(row, blink, design)
+                rows = [row.ljust(sprite_width) for row in rows]
+                if direction < 0:
+                    rows = [row[::-1] for row in rows]
+                rendered = render_rows(rows, blink, design, pixel_size, width=sprite_width, renderer=renderer)
+                for y, row in enumerate(rendered, 2):
+                    frame += f"\033[{y};{x * pixel_size + 1}H" + row
             sys.stdout.write(frame)
             sys.stdout.flush()
-            tick += 1
+            control.tick += 1
             time.sleep(0.22)
     except KeyboardInterrupt:
         pass
@@ -697,17 +908,42 @@ def animate(design="classic"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", nargs="?", choices=ACTIONS,
+                        help="control a running kiwi: coffee, sleep, wake, random")
     parser.add_argument("--design", choices=DESIGNS, default="daily",
                         help="kiwi style (default: daily)")
+    parser.add_argument("--pixel-size", type=int, choices=(1, 2), default=1,
+                        help="pixel scale: 1 compact (default), 2 original")
+    parser.add_argument("--renderer", choices=("auto", "apple-font", "half-block"),
+                        default="auto", help="compact renderer (auto halves the tab font in Apple Terminal)")
     parser.add_argument("--pet", action="store_true",
                         help="show only the pet; Ctrl-C to quit")
     parser.add_argument("--shell", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.action:
+        return send_action(args.action)
+    if args.shell:
+        return run(args, resolve_renderer(args.renderer))
+    with control_session():
+        renderer = resolve_renderer(args.renderer)
+        if renderer == "apple-font" and args.pixel_size == 1:
+            if not sys.stdin.isatty() or not sys.stdout.isatty():
+                sys.exit("Run this pet in an interactive terminal.")
+            with apple_pixel_scale():
+                # Full-size cells at half-size font preserve every original pixel.
+                args.pixel_size = 2
+                return run(args, "half-block")
+        return run(args, renderer)
+
+
+def run(args, renderer):
     if args.pet:
-        return animate(args.design)
+        return animate(args.design, args.pixel_size, renderer)
     if args.shell:
         try:
-            subprocess.call([os.environ.get("SHELL") or "/bin/sh", "-i"])
+            subprocess.call([os.environ.get("SHELL") or "/bin/sh", "-i"],
+                            env={**os.environ, "PATH": str(Path(__file__).resolve().parent) +
+                                 os.pathsep + os.environ.get("PATH", "")})
         finally:
             subprocess.run([shutil.which("screen"), "-S", os.environ["STY"],
                             "-X", "quit"], check=False)
@@ -718,10 +954,7 @@ def main():
     if not screen:
         sys.exit("This mode requires GNU screen. Use --pet for the pet alone.")
     width, height = shutil.get_terminal_size()
-    min_width = ROUND_SCENE_WIDTH * 2 if args.design in DESK_DESIGNS else 32
-    if args.design == "daily":
-        min_width = EMERGENCY_SCENE_WIDTH * 2
-    pane_height = {"daily": 18, "sleep": 18, "sleep_side": 18, "bedtime": 18, "coffee": 16, "sleep_large": 16}.get(args.design, 14 if args.design in DESK_DESIGNS else 12)
+    min_width, pane_height = scene_dimensions("daily", args.pixel_size, renderer)
     if width < min_width or height < pane_height + 8:
         sys.exit(f"Please resize your terminal to at least {min_width} columns by {pane_height + 8} rows.")
 
@@ -732,13 +965,13 @@ def main():
     command = f"{quote(sys.executable)} {quote(os.path.abspath(__file__))}"
     config = ("startup_message off\n"
               "vbell off\n"
-              f"screen -t kiwi {command} --pet --design {args.design}\n"
+              f"screen -t kiwi {command} --pet --design {args.design} --pixel-size {args.pixel_size} --renderer {renderer}\n"
               f"split\nresize {pane_height}\nfocus down\n"
               f"screen -t shell {command} --shell\n")
     with tempfile.NamedTemporaryFile(mode="w", suffix=".screenrc") as rc:
         rc.write(config)
         rc.flush()
-        subprocess.run([screen, "-m", "-S", f"kiwi-{os.getpid()}",
+        subprocess.run([screen, "-U", "-m", "-S", f"kiwi-{os.getpid()}",
                         "-c", rc.name], check=False)
 
 
