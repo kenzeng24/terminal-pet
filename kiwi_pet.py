@@ -12,6 +12,7 @@ import shutil
 import uuid
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import time
 
@@ -98,26 +99,34 @@ FAN_FRAMES = [
     ("fnf", "ngn", "fnf"),
 ]
 BOOK = [
-    "         o   ",
-    "      aaoPa  ",
-    " PPP aaoooPa ",
-    " lllloooooPaa",
-    " lllloooPoPaa",
-    " llllooPoooPa",
-    "  lllloooooPa",
-    "   klloooooaa",
-    "   kllooo aaa",
+    "             ",
+    " ll   aaaa  ",
+    " lll aaoooaa ",
+    " lllooooooaaa",
+    " lllooooooaaa",
+    " llloooooooaa",
+    "  lllooooooaa",
+    "   klooookkaa",
+    "   klooookkaa",
 ]
-# Sheets pivot at (5, 3), the top junction of the lime and green covers.
-PAGE_TURNS = [
-    (),
-    ((5, 3), (6, 3), (6, 2), (7, 2), (8, 2)),
-    ((5, 3), (5, 2), (6, 2), (6, 1), (7, 1)),
-    ((5, 3), (5, 2), (5, 1), (5, 0)),
-    ((5, 3), (5, 2), (4, 2), (4, 1), (3, 1)),
-    ((5, 3), (4, 3), (4, 2), (3, 2), (2, 2)),
-    ((5, 3), (4, 3), (3, 3), (2, 3), (1, 3)),
+BOOK_FLAT = [
+    "             ",
+    "      aaaaa  ",
+    "     aaaaaaa ",
+    "  llloooooaaa",
+    "  llloooooaaa",
+    "  llloooooaaa",
+    "  llloooooaaa",
+    "  lllooookkaa",
+    "  lllooookkaa",
 ]
+# Top outer edge travels right to left; both ends of the spine stay fixed.
+# Each edge is extended down the book to draw a whole sheet, not a floating line.
+PAGE_TURNS = ((9, 2), (8, 1), (7, 0), (5, 0), (3, 0), (2, 1), (1, 2))
+PAGE_HOLD_TICKS = 14
+PAGE_FRAME_TICKS = 2
+PAGE_CYCLE_TICKS = PAGE_HOLD_TICKS + len(PAGE_TURNS) * PAGE_FRAME_TICKS
+
 COFFEE_KIWI = [
     "             ",
     "      aaaaa  ",
@@ -146,9 +155,11 @@ DESIGNS = {
     "bedtime": (ROUND_BODY, ROUND_FEET),
     "daily": (ROUND_BODY, ROUND_FEET),
     "reading": (ROUND_BODY, ROUND_FEET),
+    "book": (ROUND_BODY, ROUND_FEET),
+    "book_flat": (ROUND_BODY, ROUND_FEET),
     "coffee": (ROUND_BODY, ROUND_FEET)
 }
-DESK_DESIGNS = ("round", "sleep", "sleep_large", "sleep_side", "bedtime", "daily", "reading", "coffee")
+DESK_DESIGNS = ("round", "sleep", "sleep_large", "sleep_side", "bedtime", "daily", "reading", "coffee", "book", "book_flat")
 BEDTIME_AWAKE_TICKS = 56
 BEDTIME_CYCLE_TICKS = 122
 DAY_LENGTHS = {
@@ -526,19 +537,52 @@ def emergency_scene(tick, schedule=None):
     return frame
 
 
+def page_flip_scene(tick):
+    """Turn a sheet behind the viewer-facing green cover."""
+    rows = [list(row) for row in BOOK]
+    phase = tick % PAGE_CYCLE_TICKS
+    if phase < PAGE_HOLD_TICKS or phase >= PAGE_CYCLE_TICKS - PAGE_FRAME_TICKS:
+        return list(BOOK)
+    # The turning sheet settles behind the cover before the book lowers.
+    edge_x, edge_y = (PAGE_TURNS[-1] if phase < PAGE_HOLD_TICKS else
+                      PAGE_TURNS[(phase - PAGE_HOLD_TICKS) // PAGE_FRAME_TICKS])
+    # Scan each line from spine to outer edge, then extend it along the spine.
+    # Fill row spans so diagonal poses remain solid at pixel resolution.
+    steps = max(abs(edge_x - 5), abs(edge_y - 3))
+    spans = {}
+    for step in range(steps + 1):
+        x = round(5 + (edge_x - 5) * step / steps)
+        y = round(3 + (edge_y - 3) * step / steps)
+        for depth in range(5):
+            px, py = x + (1 if depth >= 3 else 0), y + depth
+            spans.setdefault(py, []).append(px)
+    for y, xs in spans.items():
+        for x in range(min(xs), max(xs) + 1):
+            # The viewer sees the outside of the book. Its green covers
+            # and everything below their top edge occlude the turning sheet.
+            if y < 3 and BOOK[y][x] not in "lok":
+                rows[y][x] = "P"
+    return ["".join(row) for row in rows]
+
+
+def book_scene(tick):
+    """Keep the book pose fixed while its pages turn."""
+    return page_flip_scene(tick)
+
+
+def flat_book_scene(tick):
+    """Preview the exact flat-book artwork without motion."""
+    return list(BOOK_FLAT)
+
+
 def reading_scene(tick):
-    """Show the reading sprite beside the laptop, with pages pivoting at its spine."""
+    """Show the reading sprite beside the laptop."""
     rows = [list(row) for row in round_scene(tick)]
     # Replace the kiwi, preserving the laptop, including its leftmost base.
     for y in range(9):
         end = 14 if y == 8 else 18
         rows[y][:end] = " " * end
-    book = [list(row) for row in BOOK]
-    phase = tick % 28
-    page = 0 if phase < 14 else min(6, 1 + (phase - 14) // 2)
-    for x, y in PAGE_TURNS[page]:
-        book[y][x] = "P"
-    for y, row in enumerate(book):
+    for y, row in enumerate(book_scene(tick)):
         rows[y][1:14] = row
     return ["".join(row) for row in rows]
 
@@ -753,6 +797,8 @@ def render_rows(rows, blink, design="classic", pixel_size=1, *, width=None, rend
 
 def scene_dimensions(design, pixel_size, renderer="auto"):
     """Return terminal width and reserved height for either pixel scale."""
+    if design in ("book", "book_flat"):
+        return 13 * pixel_size, 10 if pixel_size == 2 else 6
     width = (EMERGENCY_SCENE_WIDTH if design == "daily" else
              ROUND_SCENE_WIDTH if design in DESK_DESIGNS else 16)
     height = {"daily": 18, "sleep": 18, "sleep_side": 18, "bedtime": 18,
@@ -813,7 +859,7 @@ def send_action(action):
     elif len(sessions) == 1:
         target = sessions[0]
     elif not sessions:
-        raise SystemExit("No kiwi is running. Start python3 kiwi_pet.py first.")
+        raise SystemExit("No kiwi is running. Start kiwi or kiwi --pet first.")
     else:
         raise SystemExit("Several kiwis are running. Send this command from the shell beneath the kiwi you want.")
     pending = target / f"pending-{uuid.uuid4().hex}"
@@ -886,6 +932,8 @@ def animate(design="classic", pixel_size=1, renderer="auto"):
                             large_sleep_scene(tick) if design == "sleep_large" else
                             coffee_scene(tick) if design == "coffee" else
                             reading_scene(tick) if design == "reading" else
+                            book_scene(tick) if design == "book" else
+                            flat_book_scene(tick) if design == "book_flat" else
                             bedtime_scene(tick) if design == "bedtime" else
                             round_scene(tick, sleeping=design == "sleep"))
                 else:
@@ -893,6 +941,8 @@ def animate(design="classic", pixel_size=1, renderer="auto"):
                     if x in (0, limit):
                         direction *= -1
                     rows = body + list(feet[tick % 2])
+                if design in ("book", "book_flat"):
+                    rows = [row.center(sprite_width) for row in rows]
                 blink = random.random() < 0.08
                 frame = "\033[H\033[2J"
                 rows = [row.ljust(sprite_width) for row in rows]
@@ -922,10 +972,19 @@ def main():
                         help="pixel scale: 1 compact (default), 2 original")
     parser.add_argument("--renderer", choices=("auto", "apple-font", "half-block"),
                         default="auto", help="compact renderer (auto halves the tab font in Apple Terminal)")
-    parser.add_argument("--pet", action="store_true",
-                        help="show only the pet; Ctrl-C to quit")
+    parser.add_argument("--pet",   action="store_true", help="show only the pet; Ctrl-C to quit")
     parser.add_argument("--shell", action="store_true", help=argparse.SUPPRESS)
+    previews = parser.add_mutually_exclusive_group()
+    previews.add_argument("--book", action="store_true",
+                          help="preview page flipping with a fixed book pose")
+    previews.add_argument("--book-flat", action="store_true",
+                          help="preview the flat book without motion")
     args = parser.parse_args()
+    if args.book or args.book_flat:
+        if args.action:
+            parser.error("book previews cannot be combined with a control action")
+        args.pet = True
+        args.design = "book_flat" if args.book_flat else "book"
     if args.action:
         return send_action(args.action)
     if args.shell:
@@ -946,9 +1005,14 @@ def run(args, renderer):
     if args.pet:
         return animate(args.design, args.pixel_size, renderer)
     if args.shell:
+        # Installed entry points live beside the interpreter; source checkouts
+        # retain their local launcher. Keep controls available after changing cwd.
+        source_dir = Path(__file__).resolve().parent
+        command_dir = (source_dir if (source_dir / "kiwi").is_file() else
+                       Path(sysconfig.get_path("scripts")))
         try:
             subprocess.call([os.environ.get("SHELL") or "/bin/sh", "-i"],
-                            env={**os.environ, "PATH": str(Path(__file__).resolve().parent) +
+                            env={**os.environ, "PATH": str(command_dir) +
                                  os.pathsep + os.environ.get("PATH", "")})
         finally:
             subprocess.run([shutil.which("screen"), "-S", os.environ["STY"],
@@ -958,7 +1022,9 @@ def run(args, renderer):
         sys.exit("Run this pet in an interactive terminal.")
     screen = shutil.which("screen")
     if not screen:
-        sys.exit("This mode requires GNU screen. Use --pet for the pet alone.")
+        sys.exit("Split-shell mode requires GNU Screen (screen on PATH). "
+                 "On macOS with Homebrew, run: brew install screen. "
+                 "Or run kiwi --pet for the pet alone.")
     width, height = shutil.get_terminal_size()
     min_width, pane_height = scene_dimensions("daily", args.pixel_size, renderer)
     if width < min_width or height < pane_height + 8:

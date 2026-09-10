@@ -102,7 +102,8 @@ class RenderingTests(unittest.TestCase):
             'round': pet.round_scene, 'bedtime': pet.bedtime_scene,
             'sleep': pet.side_sleep_scene, 'sleep_side': pet.side_sleep_scene,
             'sleep_large': pet.large_sleep_scene, 'coffee': pet.coffee_scene,
-            'reading': pet.reading_scene,
+            'reading': pet.reading_scene, 'book': pet.book_scene,
+            'book_flat': pet.flat_book_scene,
             'classic': lambda tick: pet.BODY + list(pet.FEET[tick % 2]),
         }
         for screen in ('', 'screen-test'):
@@ -110,6 +111,36 @@ class RenderingTests(unittest.TestCase):
                 for design, scene in scenes.items():
                     for tick in range(244):
                         self.assert_scene(scene(tick), design, tick % 7 == 0)
+
+    def test_page_turn_stays_behind_cover_and_settles_without_snap(self):
+        frames = [pet.page_flip_scene(t) for t in range(pet.PAGE_CYCLE_TICKS)]
+        self.assertEqual(frames[0], frames[-1])
+        self.assertTrue(all(frame == frames[0] for frame in frames[:pet.PAGE_HOLD_TICKS]))
+        self.assertGreater(len(set(map(tuple, frames))), 4)
+        self.assertEqual(frames[0], pet.BOOK)
+        for frame in frames:
+            self.assertEqual(frame[3:], pet.BOOK[3:])
+            for y, row in enumerate(pet.BOOK):
+                for x, pixel in enumerate(row):
+                    if pixel in 'lok':
+                        self.assertEqual(frame[y][x], pixel)
+        upright = frames[pet.PAGE_HOLD_TICKS + 3 * pet.PAGE_FRAME_TICKS]
+        left = frames[pet.PAGE_HOLD_TICKS + 5 * pet.PAGE_FRAME_TICKS]
+        self.assertEqual(upright[0][5], 'P')
+        self.assertEqual(left[2][4], 'P')
+
+    def test_book_keeps_its_pose_across_multiple_page_cycles(self):
+        for tick in range(3 * pet.PAGE_CYCLE_TICKS):
+            frame = pet.book_scene(tick)
+            self.assertEqual(frame[3:], pet.BOOK[3:])
+            self.assertEqual(frame, pet.book_scene(tick % pet.PAGE_CYCLE_TICKS))
+            self.assertEqual(pet.flat_book_scene(tick), pet.BOOK_FLAT)
+        for screen in ('', 'screen-test'):
+            with patch.dict(os.environ, STY=screen):
+                for tick in range(pet.PAGE_CYCLE_TICKS):
+                    self.assert_scene(pet.book_scene(tick), "book")
+                    self.assert_scene(pet.reading_scene(tick), "reading")
+                self.assert_scene(pet.flat_book_scene(0), "book_flat")
 
     def test_every_daily_event_recovery_and_night_display(self):
         events = {**pet.DAY_LENGTHS, 'terminal': 122, 'semicolon': 122}

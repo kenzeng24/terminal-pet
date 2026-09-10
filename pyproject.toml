@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "terminal-kiwi"
+version = "0.1.0"
+description = "An animated pixel kiwi in your terminal, alone or above a working shell"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: MacOS",
+    "Environment :: Console",
+]
+
+[project.scripts]
+kiwi = "kiwi_pet:main"
+
+[project.urls]
+Repository = "https://github.com/kenzeng24/terminal-pet"
+
+[tool.setuptools]
+py-modules = ["kiwi_pet"]

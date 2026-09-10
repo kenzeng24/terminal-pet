@@ -9,7 +9,85 @@ Run it by itself or above a working shell. The laptop displays, GPU activity,
 downloads, and errors are decorative animations, not live system monitoring.
 The pet runs locally and makes no API calls.
 
-## Quick start
+## Install and run
+
+Kiwi requires Python **3.10 or newer**. On macOS with Homebrew, install
+[pipx](https://pipx.pypa.io/) (which gives Kiwi its own Python environment)
+and GNU Screen (for the shell beneath the pet):
+
+```sh
+brew install pipx screen
+pipx ensurepath
+```
+
+Open a new terminal after `ensurepath`, then install from GitHub:
+
+```sh
+pipx install 'git+https://github.com/kenzeng24/terminal-pet.git'
+kiwi
+```
+
+The GitHub command requires Git and a repository revision containing the packaging
+files. If you have this checkout locally, install it instead:
+
+```sh
+pipx install .
+```
+
+Run that installation command from the project folder. Once installed, `kiwi`
+works from any directory; no environment activation is needed. The package is
+named `terminal-kiwi`, and its command is `kiwi`. It is not currently published
+to PyPI.
+
+```sh
+kiwi              # pet above a working shell; type exit to close both panes
+kiwi --pet        # pet only; press Ctrl+C to exit
+kiwi --pet --design coffee
+kiwi --help
+```
+
+Both launch modes default to the `daily` routine. Send `kiwi coffee`,
+`kiwi sleep`, `kiwi wake`, or `kiwi random` from the shell beneath the pet,
+or from another terminal if only one pet is running.
+
+### Upgrade or uninstall
+
+For a GitHub installation:
+
+```sh
+pipx upgrade terminal-kiwi
+```
+
+For a local installation, rerun `pipx install --force .` from the updated
+checkout. Restart a running pet to use the new version.
+
+```sh
+pipx uninstall terminal-kiwi
+```
+
+### Install without pipx
+
+You can also install into a dedicated Python environment:
+
+```sh
+python3 -m venv ~/.local/share/terminal-kiwi
+~/.local/share/terminal-kiwi/bin/python -m pip install .
+~/.local/share/terminal-kiwi/bin/kiwi --pet
+```
+
+Run the install command from this checkout. To use the short `kiwi` command,
+add this line to your shell startup file (for example, `~/.zshrc`):
+
+```sh
+export PATH="$HOME/.local/share/terminal-kiwi/bin:$PATH"
+```
+
+Upgrade with the same environment's Python using `-m pip install --upgrade .`;
+uninstall with `-m pip uninstall terminal-kiwi`.
+
+### Run from source
+
+No installation is needed to try the pet:
 
 ```sh
 git clone https://github.com/kenzeng24/terminal-pet.git
@@ -17,12 +95,9 @@ cd terminal-pet
 python3 kiwi_pet.py --pet
 ```
 
-This starts the default `daily` mode, which cycles through everyday activities
-and occasional mishaps. Press **Ctrl+C** to exit pet-only mode.
-
 ### Requirements
 
-- Python 3; checked locally with Python **3.10.11**. No pip packages are required.
+- Python 3.10 or newer; checked locally with Python **3.10.11**. No pip packages are required.
 - An interactive terminal supporting ANSI colors, cursor positioning, and the
   alternate screen. The half-block renderer additionally needs Unicode block
   characters. Output redirection and notebook output cells are not supported.
@@ -110,6 +185,26 @@ smaller physical cells.
 Original size uses 78 columns for most desk scenes and 84 for `daily`. Required height
 varies by design. The program reports the required size if the window is too small.
 
+## Preview page flipping
+
+```sh
+kiwi --book
+# From a source checkout without installing:
+python3 kiwi_pet.py --book
+```
+
+This loops the reading sprite on its own, without the laptop or a working shell.
+The green outside cover faces you and stays fixed. The sheet turns behind it;
+only the portion above the top edge is visible. The book keeps the same shape
+throughout the animation, with a pause between page turns.
+
+Use `kiwi --book-flat` (or `python3 kiwi_pet.py --book-flat`) to preview the flat
+pose without motion. Both previews exit with **Ctrl+C**. Use
+`--pixel-size 1 --renderer half-block` for a compact preview.
+
+To see the same page flip beside the laptop, run `kiwi --pet --design reading`.
+After updating a local installation, run `pipx install --force .` to pick up the change.
+
 ## Daily events
 
 In `daily` mode, each simulated day has **two different events before one
@@ -150,7 +245,8 @@ Commands take effect on the next animation tick (about 0.22 seconds). They contr
 only the kiwi above that shell. Starting the pet without an action defaults to
 the random daily routine; `--design` still lets you choose an initial activity.
 
-For pet-only mode, send commands from another terminal. From the project folder:
+For pet-only mode, send commands from another terminal using the installed `kiwi`
+command. If running from source without installing, use the project launcher:
 
 ```sh
 ./kiwi coffee

@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import kiwi_pet as pet
@@ -87,6 +88,32 @@ class ControlTests(unittest.TestCase):
                 control = pet.ActivityControl('daily', session)
                 control.poll()
                 self.assertEqual(control.design, pet.ACTIONS[action])
+
+    def test_installed_shell_exposes_entry_point_directory(self):
+        args = SimpleNamespace(pet=False, shell=True)
+        with patch.object(pet, '__file__', str(Path(self.temp.name) / 'site-packages' / 'kiwi_pet.py')), \
+                patch.object(pet.sysconfig, 'get_path', return_value='/installed/bin'), \
+                patch.dict(os.environ, {'STY': 'test', 'PATH': '/usr/bin'}), \
+                patch.object(pet.subprocess, 'call') as shell, \
+                patch.object(pet.subprocess, 'run'):
+            pet.run(args, 'half-block')
+        self.assertEqual(shell.call_args.kwargs['env']['PATH'], '/installed/bin:/usr/bin')
+
+    def test_book_preview_launches_without_split_shell(self):
+        with patch.object(sys, 'argv', ['kiwi', '--book', '--renderer', 'half-block']), \
+                patch.object(pet, 'animate') as animate, \
+                patch.object(pet.subprocess, 'run') as subprocess_run:
+            pet.main()
+        self.assertEqual(animate.call_args.args[0], 'book')
+        subprocess_run.assert_not_called()
+
+    def test_flat_book_preview_launches_without_split_shell(self):
+        with patch.object(sys, 'argv', ['kiwi', '--book-flat', '--renderer', 'half-block']), \
+                patch.object(pet, 'animate') as animate, \
+                patch.object(pet.subprocess, 'run') as subprocess_run:
+            pet.main()
+        self.assertEqual(animate.call_args.args[0], 'book_flat')
+        subprocess_run.assert_not_called()
 
 
 if __name__ == '__main__':
